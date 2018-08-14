@@ -21,8 +21,10 @@ class USBNetDevice(NetDevice):
 		super(NetDevice, self).__init__()
 		dmioutput = cursor_consume_next(dmioutput, "idVendor: ")
 		# Strip the 0x off the front of the vendor and product ids
-		self.vendor = (dmioutput.split()[0])[2:]
-		self.product = (dmioutput.split()[2])[2:]
+		#NOTE: IM SWAPPING THESE BECAUSE THEY ARE BACKWARDS ON MY DEVEL SYSTEM
+		#THIS NEEDS TO BE REVERTED
+		self.product = (dmioutput.split()[0])[2:]
+		self.vendor = (dmioutput.split()[2])[2:]
 
 		# Now we need to find the corresponding device name in sysfs
 		if self.find_device() == False:
