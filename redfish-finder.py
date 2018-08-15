@@ -56,7 +56,7 @@ class USBNetDevice(NetDevice):
 		if self.find_device() == False:
 			return None
 
-	def getifcname(self, dpath):
+	def getname(self, dpath):
 		for root, dirs, files in os.walk(dpath, topdown=False):
 			for d in dirs:
 				try:
@@ -87,7 +87,7 @@ class USBNetDevice(NetDevice):
 					f.close()
 					# We found a matching product and vendor, go find the net directory
 					# and get the interface name
-					return self.getifcname(os.path.join(root, d))
+					return self.getname(os.path.join(root, d))
 				except:
 					continue
 		return False 
@@ -214,14 +214,27 @@ class dmiobject():
 		return str(self.device) + " | " + str(self.hostconfig) + " | " + str(self.serviceconfig)
 
 
+class nmiConnection():
+	def __init__(self, ifc):
+		self.properties = {}
+		propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
+		lines = propstr.split('\n')
+		for l in lines:
+			la = l.split()
+			if len(la) == 0:
+				continue
+			self.properties[l[0].strip(":")] = l[1]
+
+	def __str__(self):
+		return str(properties)
+
 def get_info_from_dmidecode():
 	dmioutput = subprocess.check_output(["/usr/sbin/dmidecode", "-t42"])
 	return dmiobject(dmioutput)
 
 def main():
 	smbios_info = get_info_from_dmidecode()
-	print smbios_info
-
+	conn = nmiConnection(smbios_info.device)
 
 if __name__ == "__main__":
 	main()
