@@ -151,6 +151,31 @@ class HostConfig():
 		return val
 
 #
+# Class to represent service output configuration
+#
+class OSServiceData():
+	def __init__(self):
+		f = open("/etc/hosts", "r")
+		self.host_entries = f.readlines()
+		self.constant_name = "redfish-localhost"
+		f.close()
+
+	def update_redfish_info(self, sconf):
+		# strip any redfish localhost entry from host_entries
+		# as well as any entries for the smbios exported host name
+		for h in self.host_entries:
+			if h.find(self.constant_name) != -1:
+				self.host_entries.remove(h)
+			if h.find(sconf.hostname) != -1:
+				self.host_entries.remove(h)
+
+		# Now add the new entries in
+		newentry = str(sconf.address) + "     " + self.constant_name
+		newentry = newentry + " " + sconf.hostname
+		self.host_entries.append(newentry)
+
+
+#
 # Class to hold Redfish service information
 #
 class ServiceConfig():
@@ -281,14 +306,18 @@ class nmConnection():
 		return self.properties[prop]
 
 	def sync_to_os(self):
-		cmdline = "nmi con modify id " + self.ifc.getifcname() + " "
+		cmdlinedown = "nmi con down id " + self.ifc.getifcname()
+		cmdlineup = "nmi con up id " + self.ifc.getifcname()
+		cmdlinemod = "nmcli con modify id " + self.ifc.getifcname() + " "
 		if self.updates == None:
 			return
 		for i in self.updates:
 			cmdline = cmdline + i + " " + self.properties[i] + " "
 
-		print cmdline	
-		return
+		subprocess.check_call(cmdlinedown.split())
+		subprocess.check_call(cmdlinemod.split())
+		subprocess.check_call(cmdlineup.split())
+
 
 	def __str__(self):
 		return str(self.properties)
@@ -302,6 +331,8 @@ def main():
 	conn = nmConnection(smbios_info.device)
 	smbios_info.hostconfig.generate_nm_config(smbios_info.device, conn)
 	conn.sync_to_os()
+	svc = OSServiceData()
+	svc.update_redfish_info(smbios_info.serviceconfig)
 
 if __name__ == "__main__":
 	main()
