@@ -122,6 +122,24 @@ class HostConfig():
 			# Support the other types later
 			return None
 
+	def generate_nm_config(self, device, nmcon):
+		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
+		if self.assigntype == AssignType.STATIC:
+			if self.address.version == 4:
+				nmcon.update_property("ipv4.method", assignmap[self.assigntype])
+				nmcon.update_property("ipv4.addresses", str(self.address))
+			else:
+				nmcon.update_property("ipv6.method", assignmap[self.assigntype])
+				nmcon.update_property("ipv6.addresses", str(self.address))
+		else:
+			if self.address.version == 4:
+				nmcon.update_property("ipv4.method", assignmap[self.assigntype])
+			else:
+				nmcon.update_property("ipv6.method", assignmap[self.assigntype])
+
+		return True
+
+
 	def __str__(self):
 		val = "Host Config(" + AssignType.typestring[self.assigntype] + ")" 
 		if (self.assigntype == AssignType.STATIC):
@@ -214,19 +232,42 @@ class dmiobject():
 		return str(self.device) + " | " + str(self.hostconfig) + " | " + str(self.serviceconfig)
 
 
+#
+# Represents an nmi connection
+#
 class nmiConnection():
 	def __init__(self, ifc):
+		try:
+			propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
+		except:
+			return None
+
 		self.properties = {}
-		propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
+		self.updates = None
+
 		lines = propstr.split('\n')
 		for l in lines:
 			la = l.split()
-			if len(la) == 0:
+			if len(la) < 2:
 				continue
-			self.properties[l[0].strip(":")] = l[1]
+			self.properties[la[0].strip(":")] = la[1]
+
+	def update_property(self, prop, val):
+		if self.get_property(prop) == val:
+			return
+		if self.updates == None:
+			self.updates = []
+		self.properties[prop] = val
+		self.updates.append(prop)
+
+	def get_property(self, prop):
+		return self.properties[prop]
+
+	def sync_to_os(self):
+		return
 
 	def __str__(self):
-		return str(properties)
+		return str(self.properties)
 
 def get_info_from_dmidecode():
 	dmioutput = subprocess.check_output(["/usr/sbin/dmidecode", "-t42"])
@@ -235,6 +276,8 @@ def get_info_from_dmidecode():
 def main():
 	smbios_info = get_info_from_dmidecode()
 	conn = nmiConnection(smbios_info.device)
+	smbios_info.hostconfig.generate_nm_config(smbios_info.device, conn)
+	conn.sync_to_os()
 
 if __name__ == "__main__":
 	main()
