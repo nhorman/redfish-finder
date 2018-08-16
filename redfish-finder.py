@@ -100,6 +100,8 @@ class HostConfig():
 	def __init__(self, cursor):
 		self.address = None
 		self.mask = None
+		self.network = None
+
 		cursor = cursor_consume_next(cursor, "Host IP Assignment Type: ")
 		if cursor == None:
 			return None
@@ -108,14 +110,20 @@ class HostConfig():
 			cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
 			if cursor.split()[0] == "IPv4":
 				cursor = cursor_consume_next(cursor, "IPv4 Address: ")
-				self.address = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+				addr = unicode(cursor.split()[0], "utf-8")
+				self.address = ipaddress.IPv4Address(addr)
 				cursor = cursor_consume_next(cursor, "IPv4 Mask: ")
-				self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+				mask = unicode (cursor.split()[0], "utf-8")
+				self.mask = ipaddress.IPv4Address(mask)
+				self.network = ipaddress.IPv4Network(addr + "/" + mask, strict=False)
 			elif cursor.split()[0] == "IPv6":
 				cursor = cursor_consume_next(cursor, "IPv6 Address: ")
-				self.address = ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8"))
+				addr = unicode(cursor.split()[0], "utf-8")	
+				self.address = ipaddress.IPv6Address(addr)
 				cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
-				self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+				mask = unicode(cursor.split()[0], "utf-8")
+				self.mask = ipaddress.IPv4Address(mask)
+				self.network = ipaddress.IPv6Network(addr + "/" + mask, strict=False)
 		elif cursor.split()[0] == "DHCP":
 			self.assigntype = AssignType.DHCP
 		else:
@@ -124,18 +132,14 @@ class HostConfig():
 
 	def generate_nm_config(self, device, nmcon):
 		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
-		if self.assigntype == AssignType.STATIC:
-			if self.address.version == 4:
-				nmcon.update_property("ipv4.method", assignmap[self.assigntype])
-				nmcon.update_property("ipv4.addresses", str(self.address))
-			else:
-				nmcon.update_property("ipv6.method", assignmap[self.assigntype])
-				nmcon.update_property("ipv6.addresses", str(self.address))
+		if self.address.version == 4:
+			methodp = "ipv4.method"
+			addrp = "ipv4.addresses"	
 		else:
-			if self.address.version == 4:
-				nmcon.update_property("ipv4.method", assignmap[self.assigntype])
-			else:
-				nmcon.update_property("ipv6.method", assignmap[self.assigntype])
+			methodp = "ipv6.method"
+			addrp = "ipv6.addresses"
+		nmcon.update_property(methodp, assignmap[self.assigntype])
+		nmcon.update_property(addrp, str(self.address) + "/" + str(self.network.prefixlen))
 
 		return True
 
@@ -237,6 +241,7 @@ class dmiobject():
 #
 class nmiConnection():
 	def __init__(self, ifc):
+		self.ifc = ifc
 		try:
 			propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
 		except:
@@ -253,6 +258,7 @@ class nmiConnection():
 			self.properties[la[0].strip(":")] = la[1]
 
 	def update_property(self, prop, val):
+		print prop + " " + val + " " + self.get_property(prop)
 		if self.get_property(prop) == val:
 			return
 		if self.updates == None:
@@ -264,6 +270,13 @@ class nmiConnection():
 		return self.properties[prop]
 
 	def sync_to_os(self):
+		cmdline = "nmi con modify id " + self.ifc.getifcname() + " "
+		if self.updates == None:
+			return
+		for i in self.updates:
+			cmdline = cmdline + i + " " + self.properties[i] + " "
+
+		print cmdline	
 		return
 
 	def __str__(self):
