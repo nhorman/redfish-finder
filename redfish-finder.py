@@ -239,7 +239,7 @@ class dmiobject():
 #
 # Represents an nmi connection
 #
-class nmiConnection():
+class nmConnection():
 	def __init__(self, ifc):
 		self.ifc = ifc
 		try:
@@ -288,7 +288,7 @@ def get_info_from_dmidecode():
 
 def main():
 	smbios_info = get_info_from_dmidecode()
-	conn = nmiConnection(smbios_info.device)
+	conn = nmConnection(smbios_info.device)
 	smbios_info.hostconfig.generate_nm_config(smbios_info.device, conn)
 	conn.sync_to_os()
 
