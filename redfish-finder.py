@@ -245,7 +245,18 @@ class nmConnection():
 		try:
 			propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
 		except:
-			return None
+			# Need to create a connection
+			try:
+				create = 	[ "nmcli", "con", "add",
+						"connection.id", ifc.getifcname(),
+						"connection.type", "802-3-ethernet",
+						"connection.interface-name", ifc.getifcname()]
+
+				subprocess.check_call(create)
+				propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
+			except:
+				return None
+
 
 		self.properties = {}
 		self.updates = None
