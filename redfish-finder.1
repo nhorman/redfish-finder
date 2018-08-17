@@ -1,0 +1,29 @@
+.TH "REDFISH-FINDER" 1 "Aug 2018" "Linux" "redfish-finder"
+.SH NAME
+redfish-finder \- discover and provide canonical access to local redfish bmc services  
+.SH "SYNOPSIS"
+
+.nf
+redfish-finder
+.fi
+
+.SH "DESCRIPTION"
+
+.PP
+\fBredfish-finder\fR automatically discovers redfish based BMC services on 
+a system, configures the appropriate network interface to access it, and adds a host entry 
+to reach the service via the BMC configured name, and the canonical name 'redfish-localhost'
+
+.SH "OPTIONS"
+
+.TP
+.B Currently, no options are available for redfish-finder
+
+.SH "FILES"
+.TP
+.B /etc/hosts
+redfish-finder will read and write /etc/hosts to add the redfish-localhost name
+
+.SH "Homepage"
+https://github.com/nhorman/redfish-finder
+
