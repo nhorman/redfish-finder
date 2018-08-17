@@ -45,3 +45,9 @@ canonical url:
 https://redfish-localhost/redfish/v1
 to use the service without additional configuration
 
+## What are the requirements for redfish-finder
+Currently, to use redfish you need:
+* python version 2 or later
+* the dmidecode utility, at a version capable of parsing type 42 data
+* the nmcli utility to build networkmanager configurations
+
