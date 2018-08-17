@@ -305,7 +305,7 @@ class OSServiceData():
 		return True
 
 #
-# Represents an nmi connection, pulls in the config from nmi con show <ifc>
+# Represents an nm connection, pulls in the config from nmi con show <ifc>
 # Creates the connection if it doesn't exist, and updates it to reflect the host 
 # Config data from the HostConfig class
 #
@@ -354,13 +354,13 @@ class nmConnection():
 		return self.properties[prop]
 
 	def sync_to_os(self):
-		cmdlinedown = "nmi con down id " + self.ifc.getifcname()
-		cmdlineup = "nmi con up id " + self.ifc.getifcname()
+		cmdlinedown = "nmcli con down id " + self.ifc.getifcname()
+		cmdlineup = "nmcli con up id " + self.ifc.getifcname()
 		cmdlinemod = "nmcli con modify id " + self.ifc.getifcname() + " "
 		if self.updates == None:
 			return True
 		for i in self.updates:
-			cmdline = cmdline + i + " " + self.properties[i] + " "
+			cmdlinemod = cmdlinemod + i + " " + self.properties[i] + " "
 		try:
 			subprocess.check_call(cmdlinedown.split())
 			subprocess.check_call(cmdlinemod.split())
