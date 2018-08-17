@@ -1,0 +1,12 @@
+[Unit]
+Description=Redfish host api discovery service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/redfish-finder
+RemainAfterExit=true
+StandardOutput=journal
+
+[Install]
+WantedBy=multi-user.target
