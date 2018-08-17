@@ -6,6 +6,8 @@ import ipaddress
 
 #
 # Helper function to consume the dmidecode output
+# Accepts a string as input and truncates the string
+# to the point immediately following needle
 #
 def cursor_consume_next(cursor, needle):
 	idx = cursor.find(needle)
@@ -14,7 +16,10 @@ def cursor_consume_next(cursor, needle):
 	return cursor[idx + len(needle):]
 
 #
-# Some basic enumeration classes
+# The AssignType class.  Ennumerates the various
+# Types of Host and Redfish  IP Address assignments
+# That are possible. Taken from the Redfish Host API 
+# Specification 
 #
 class AssignType():
 	UNKNOWN = 0
@@ -27,7 +32,9 @@ class AssignType():
 
 
 #
-# NetDevice class, used to determine the interface name that can reach the BMC
+# NetDevice class, Superclass of bus specific Device Classes
+# USBNetDevice, and PCINetDevice.  Provides the getifcname
+# interface for use in configuring the OS via nmcli
 #
 class NetDevice(object):
 	def __init(self):
@@ -41,7 +48,8 @@ class NetDevice(object):
 
 #
 # Subclass of NetDevice, parses the dmidecode output
-# to discover interface name
+# to discover interface name for USB type devices
+#
 class USBNetDevice(NetDevice):
 	def __init__(self, dmioutput):
 		super(NetDevice, self).__init__()
@@ -94,7 +102,8 @@ class USBNetDevice(NetDevice):
 
 
 #
-# class to hold our host config parameters
+# Parses out HostConfig information from SMBIOS for use in
+# Configuring OS network interface 
 #
 class HostConfig():
 	def __init__(self, cursor):
@@ -150,39 +159,10 @@ class HostConfig():
 			val = val + " " + str(self.address) + "/" + str(self.mask)
 		return val
 
-#
-# Class to represent service output configuration
-#
-class OSServiceData():
-	def __init__(self):
-		f = open("/etc/hosts", "r")
-		self.host_entries = f.readlines()
-		self.constant_name = "redfish-localhost"
-		f.close()
-
-	def update_redfish_info(self, sconf):
-		# strip any redfish localhost entry from host_entries
-		# as well as any entries for the smbios exported host name
-		for h in self.host_entries:
-			if h.find(self.constant_name) != -1:
-				self.host_entries.remove(h)
-				continue
-			if h.find(sconf.hostname) != -1:
-				self.host_entries.remove(h)
-				continue
-
-		# Now add the new entries in
-		newentry = str(sconf.address) + "     " + self.constant_name
-		newentry = newentry + " " + sconf.hostname
-		self.host_entries.append(newentry)
-
-	def output_redfish_config(self):
-		f = open("/etc/hosts", "w")
-		f.writelines(self.host_entries)
-		f.close()
 
 #
-# Class to hold Redfish service information
+# Class to hold Redfish service information, as extracted 
+# From the smbios data from dmidecode
 #
 class ServiceConfig():
 	def __init__(self, cursor):
@@ -266,9 +246,42 @@ class dmiobject():
 	def __str__(self):
 		return str(self.device) + " | " + str(self.hostconfig) + " | " + str(self.serviceconfig)
 
+#
+# Service Data represents the config data that gets written to 
+# Various OS config files (/etc/host) 
+#
+class OSServiceData():
+	def __init__(self):
+		f = open("/etc/hosts", "r")
+		self.host_entries = f.readlines()
+		self.constant_name = "redfish-localhost"
+		f.close()
+
+	def update_redfish_info(self, sconf):
+		# strip any redfish localhost entry from host_entries
+		# as well as any entries for the smbios exported host name
+		for h in self.host_entries:
+			if h.find(self.constant_name) != -1:
+				self.host_entries.remove(h)
+				continue
+			if h.find(sconf.hostname) != -1:
+				self.host_entries.remove(h)
+				continue
+
+		# Now add the new entries in
+		newentry = str(sconf.address) + "     " + self.constant_name
+		newentry = newentry + " " + sconf.hostname
+		self.host_entries.append(newentry)
+
+	def output_redfish_config(self):
+		f = open("/etc/hosts", "w")
+		f.writelines(self.host_entries)
+		f.close()
 
 #
-# Represents an nmi connection
+# Represents an nmi connection, pulls in the config from nmi con show <ifc>
+# Creates the connection if it doesn't exist, and updates it to reflect the host 
+# Config data from the HostConfig class
 #
 class nmConnection():
 	def __init__(self, ifc):
@@ -300,7 +313,6 @@ class nmConnection():
 			self.properties[la[0].strip(":")] = la[1]
 
 	def update_property(self, prop, val):
-		print prop + " " + val + " " + self.get_property(prop)
 		if self.get_property(prop) == val:
 			return
 		if self.updates == None:
