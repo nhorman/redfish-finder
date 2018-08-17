@@ -166,14 +166,20 @@ class OSServiceData():
 		for h in self.host_entries:
 			if h.find(self.constant_name) != -1:
 				self.host_entries.remove(h)
+				continue
 			if h.find(sconf.hostname) != -1:
 				self.host_entries.remove(h)
+				continue
 
 		# Now add the new entries in
 		newentry = str(sconf.address) + "     " + self.constant_name
 		newentry = newentry + " " + sconf.hostname
 		self.host_entries.append(newentry)
 
+	def output_redfish_config(self):
+		f = open("/etc/hosts", "w")
+		f.writelines(self.host_entries)
+		f.close()
 
 #
 # Class to hold Redfish service information
@@ -333,6 +339,7 @@ def main():
 	conn.sync_to_os()
 	svc = OSServiceData()
 	svc.update_redfish_info(smbios_info.serviceconfig)
+	svc.output_redfish_config()
 
 if __name__ == "__main__":
 	main()
