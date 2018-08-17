@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import sys
 import os
 import subprocess
 import ipaddress
@@ -98,6 +99,7 @@ class USBNetDevice(NetDevice):
 					return self.getname(os.path.join(root, d))
 				except:
 					continue
+		print("redfish-finder: Unable to find usb network device with vendor:product %x:%x" % self.vendor, self.product)
 		return False 
 
 
@@ -111,32 +113,38 @@ class HostConfig():
 		self.mask = None
 		self.network = None
 
-		cursor = cursor_consume_next(cursor, "Host IP Assignment Type: ")
-		if cursor == None:
-			return None
-		if cursor.split()[0] == "Static":
-			self.assigntype = AssignType.STATIC
-			cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
-			if cursor.split()[0] == "IPv4":
-				cursor = cursor_consume_next(cursor, "IPv4 Address: ")
-				addr = unicode(cursor.split()[0], "utf-8")
-				self.address = ipaddress.IPv4Address(addr)
-				cursor = cursor_consume_next(cursor, "IPv4 Mask: ")
-				mask = unicode (cursor.split()[0], "utf-8")
-				self.mask = ipaddress.IPv4Address(mask)
-				self.network = ipaddress.IPv4Network(addr + "/" + mask, strict=False)
-			elif cursor.split()[0] == "IPv6":
-				cursor = cursor_consume_next(cursor, "IPv6 Address: ")
-				addr = unicode(cursor.split()[0], "utf-8")	
-				self.address = ipaddress.IPv6Address(addr)
-				cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
-				mask = unicode(cursor.split()[0], "utf-8")
-				self.mask = ipaddress.IPv4Address(mask)
-				self.network = ipaddress.IPv6Network(addr + "/" + mask, strict=False)
-		elif cursor.split()[0] == "DHCP":
-			self.assigntype = AssignType.DHCP
-		else:
-			# Support the other types later
+		try:
+			cursor = cursor_consume_next(cursor, "Host IP Assignment Type: ")
+			if cursor == None:
+				printf("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
+				return None
+			if cursor.split()[0] == "Static":
+				self.assigntype = AssignType.STATIC
+				cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
+				if cursor.split()[0] == "IPv4":
+					cursor = cursor_consume_next(cursor, "IPv4 Address: ")
+					addr = unicode(cursor.split()[0], "utf-8")
+					self.address = ipaddress.IPv4Address(addr)
+					cursor = cursor_consume_next(cursor, "IPv4 Mask: ")
+					mask = unicode (cursor.split()[0], "utf-8")
+					self.mask = ipaddress.IPv4Address(mask)
+					self.network = ipaddress.IPv4Network(addr + "/" + mask, strict=False)
+				elif cursor.split()[0] == "IPv6":
+					cursor = cursor_consume_next(cursor, "IPv6 Address: ")
+					addr = unicode(cursor.split()[0], "utf-8")	
+					self.address = ipaddress.IPv6Address(addr)
+					cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
+					mask = unicode(cursor.split()[0], "utf-8")
+					self.mask = ipaddress.IPv4Address(mask)
+					self.network = ipaddress.IPv6Network(addr + "/" + mask, strict=False)
+			elif cursor.split()[0] == "DHCP":
+				self.assigntype = AssignType.DHCP
+			else:
+				# Support the other types later
+				print("redfish-finder: Unable to parse SMBIOS Host configuaration")
+				return None
+		except:
+			print("redfish-finder: Unexpected error while parsing HostConfig!")
 			return None
 
 	def generate_nm_config(self, device, nmcon):
@@ -147,8 +155,12 @@ class HostConfig():
 		else:
 			methodp = "ipv6.method"
 			addrp = "ipv6.addresses"
-		nmcon.update_property(methodp, assignmap[self.assigntype])
-		nmcon.update_property(addrp, str(self.address) + "/" + str(self.network.prefixlen))
+		try:
+			nmcon.update_property(methodp, assignmap[self.assigntype])
+			nmcon.update_property(addrp, str(self.address) + "/" + str(self.network.prefixlen))
+		except:
+			print("redfish-finder: Error generating nm_config")
+			return False
 
 		return True
 
@@ -168,35 +180,39 @@ class ServiceConfig():
 	def __init__(self, cursor):
 		self.address = None
 		self.mask = None
-		cursor = cursor_consume_next(cursor, "Redfish Service IP Discovery Type: ")
-		if cursor == None:
-			return None
-		if cursor.split()[0] == "Static":
-			self.assigntype = AssignType.STATIC
-			cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
-			if cursor.split()[0] == "IPv4":
-				cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Address: ")
-				self.address = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
-				cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Mask: ")
-				self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
-			elif cursor.split()[0] == "IPv6":
-				cursor = cursor_consume_next(cursor, "IPv6 Redfish Service Address: ")
-				self.address = ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8"))
-				cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
-				self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
-		elif cursor.split()[0] == "DHCP":
-			self.assigntype = AssignType.DHCP
-		else:
-			# Support the other types later
-			return None
+		try:
+			cursor = cursor_consume_next(cursor, "Redfish Service IP Discovery Type: ")
+			if cursor == None:
+				print("redfish-finder: Unable to find Redfish Service Info")
+				return None
+			if cursor.split()[0] == "Static":
+				self.assigntype = AssignType.STATIC
+				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
+				if cursor.split()[0] == "IPv4":
+					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Address: ")
+					self.address = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Mask: ")
+					self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+				elif cursor.split()[0] == "IPv6":
+					cursor = cursor_consume_next(cursor, "IPv6 Redfish Service Address: ")
+					self.address = ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8"))
+					cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
+					self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+			elif cursor.split()[0] == "DHCP":
+				self.assigntype = AssignType.DHCP
+			else:
+				# Support the other types later
+				print("redfish-finder: Unable to parse SMBIOS Service Config info")
+				return None
 
-		cursor = cursor_consume_next(cursor, "Redfish Service Port: ")
-		self.port = int(cursor.split()[0])
-		cursor = cursor_consume_next(cursor, "Redfish Service Vlan: ")
-		self.vlan = int(cursor.split()[0])
-		cursor = cursor_consume_next(cursor, "Redfish Service Hostname: ")
-		self.hostname = cursor.split()[0]
-
+			cursor = cursor_consume_next(cursor, "Redfish Service Port: ")
+			self.port = int(cursor.split()[0])
+			cursor = cursor_consume_next(cursor, "Redfish Service Vlan: ")
+			self.vlan = int(cursor.split()[0])
+			cursor = cursor_consume_next(cursor, "Redfish Service Hostname: ")
+			self.hostname = cursor.split()[0]
+		except:
+			print("redfish-finder: Unexpected error parsing ServiceConfig")
 
 	def __str__(self):
 		val = "Service Config(" + AssignType.typestring[self.assigntype] + ")" 
@@ -232,6 +248,7 @@ class dmiobject():
 		# Now find the Redfish over IP section
 		cursor = cursor_consume_next(cursor, "Protocol ID: 04 (Redfish over IP)\n")
 		if (cursor == None):
+			print("redfish-finder: Unable to find Redfish Protocol")
 			return None
 
 		self.hostconfig = HostConfig(cursor)
@@ -252,10 +269,14 @@ class dmiobject():
 #
 class OSServiceData():
 	def __init__(self):
-		f = open("/etc/hosts", "r")
-		self.host_entries = f.readlines()
-		self.constant_name = "redfish-localhost"
-		f.close()
+		try:
+			f = open("/etc/hosts", "r")
+			self.host_entries = f.readlines()
+			self.constant_name = "redfish-localhost"
+			f.close()
+		except:
+			print("Unable to read OS Config Files")
+			return None
 
 	def update_redfish_info(self, sconf):
 		# strip any redfish localhost entry from host_entries
@@ -274,9 +295,14 @@ class OSServiceData():
 		self.host_entries.append(newentry)
 
 	def output_redfish_config(self):
-		f = open("/etc/hosts", "w")
-		f.writelines(self.host_entries)
-		f.close()
+		try:
+			f = open("/etc/hosts", "w")
+			f.writelines(self.host_entries)
+			f.close()
+		except:
+			print("Unalbe to open OS Config Files for writing")
+			return False
+		return True
 
 #
 # Represents an nmi connection, pulls in the config from nmi con show <ifc>
@@ -299,18 +325,22 @@ class nmConnection():
 				subprocess.check_call(create)
 				propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
 			except:
+				print("redfish-finder: Unexpected error building connection to %s" % self.ifc)
 				return None
 
+		try:
+			self.properties = {}
+			self.updates = None
 
-		self.properties = {}
-		self.updates = None
-
-		lines = propstr.split('\n')
-		for l in lines:
-			la = l.split()
-			if len(la) < 2:
-				continue
-			self.properties[la[0].strip(":")] = la[1]
+			lines = propstr.split('\n')
+			for l in lines:
+				la = l.split()
+				if len(la) < 2:
+					continue
+				self.properties[la[0].strip(":")] = la[1]
+		except:
+			print("Unexpected error parsing connection for %s" % self.ifc)
+			return None
 
 	def update_property(self, prop, val):
 		if self.get_property(prop) == val:
@@ -328,14 +358,17 @@ class nmConnection():
 		cmdlineup = "nmi con up id " + self.ifc.getifcname()
 		cmdlinemod = "nmcli con modify id " + self.ifc.getifcname() + " "
 		if self.updates == None:
-			return
+			return True
 		for i in self.updates:
 			cmdline = cmdline + i + " " + self.properties[i] + " "
-
-		subprocess.check_call(cmdlinedown.split())
-		subprocess.check_call(cmdlinemod.split())
-		subprocess.check_call(cmdlineup.split())
-
+		try:
+			subprocess.check_call(cmdlinedown.split())
+			subprocess.check_call(cmdlinemod.split())
+			subprocess.check_call(cmdlineup.split())
+		except:
+			print("redfish-finder: Unexpected error running nmcli while updating connection")
+			return False
+		return True
 
 	def __str__(self):
 		return str(self.properties)
@@ -345,13 +378,29 @@ def get_info_from_dmidecode():
 	return dmiobject(dmioutput)
 
 def main():
+	print("redfish-finder: Getting dmidecode info")
 	smbios_info = get_info_from_dmidecode()
+	if smbios_info == None:
+		sys.exit(1)
+	print("redfish-finder: Building NetworkManager connection info")
 	conn = nmConnection(smbios_info.device)
-	smbios_info.hostconfig.generate_nm_config(smbios_info.device, conn)
-	conn.sync_to_os()
+	if conn == None:
+		sys.exit(1)
+	print("redfish-finder: Converting SMBIOS Host Config to NetworkManager Connection info")
+	if smbios_info.hostconfig.generate_nm_config(smbios_info.device, conn) == False:
+		sys.exit(1)
+	print("redfish-finder: Applying NetworkManager connection configuration changes")
+	if conn.sync_to_os() == False:
+		sys.exit(1)
+	print("redfish-finder: Obtaining OS config info")
 	svc = OSServiceData()
+	if svc == None:
+		sys.exit(1)
+	print("redfish-finder: Adding redfish host info to OS config")
 	svc.update_redfish_info(smbios_info.serviceconfig)
-	svc.output_redfish_config()
+	if svc.output_redfish_config() == False:
+		sys.exit(1)
+	print("redfish-finder: Done, BMC is now reachable via hostname redfish-localhost")
 
 if __name__ == "__main__":
 	main()
