@@ -51,3 +51,9 @@ Currently, to use redfish you need:
 * the dmidecode utility, at a version capable of parsing type 42 data
 * the nmcli utility to build networkmanager configurations
 
+## Future work
+* Support for DHCP/IPV6 Host address detection
+* Cleanup mode to deconfigure an interface and host info
+* Migrate from use of dmidecode to a python module for smbios parsing
+* Migrate from use of nmcli to a python module for network manager control
+
