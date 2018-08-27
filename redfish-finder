@@ -345,7 +345,7 @@ class nmConnection():
 
 		try:
 			self.properties = {}
-			self.updates = None
+			self.updates = [] 
 
 			lines = propstr.split('\n')
 			for l in lines:
@@ -360,8 +360,6 @@ class nmConnection():
 	def update_property(self, prop, val):
 		if self.get_property(prop) == val:
 			return
-		if self.updates == None:
-			self.updates = []
 		self.properties[prop] = val
 		self.updates.append(prop)
 
@@ -370,13 +368,21 @@ class nmConnection():
 
 	def sync_to_os(self):
 		cmdlinemod = "nmcli con modify id " + self.ifc.getifcname() + " "
-		if self.updates == None:
-			return True
 		for i in self.updates:
 			cmdlinemod = cmdlinemod + i + " " + self.properties[i] + " "
 		try:
 			subprocess.check_call(self.cmdlinedown.split())
-			subprocess.check_call(cmdlinemod.split())
+		except subprocess.CalledProcessError as e:
+			if e.returncode != 10:
+				print("redfish-finder: Unable to take down interface: error %d" % e.returncode)
+				return False
+		except:
+			print("redfish-finder: Unexpected error running nmcli while dropping connection")
+			return False
+
+		try:
+			if len(self.updates) != 0:
+				subprocess.check_call(cmdlinemod.split())
 			subprocess.check_call(self.cmdlineup.split())
 		except:
 			print("redfish-finder: Unexpected error running nmcli while updating connection")
