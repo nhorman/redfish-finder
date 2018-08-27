@@ -4,7 +4,7 @@ redfish-finder \- discover and provide canonical access to local redfish bmc ser
 .SH "SYNOPSIS"
 
 .nf
-redfish-finder
+redfish-finder [options]
 .fi
 
 .SH "DESCRIPTION"
@@ -17,7 +17,12 @@ to reach the service via the BMC configured name, and the canonical name 'redfis
 .SH "OPTIONS"
 
 .TP
-.B Currently, no options are available for redfish-finder
+.B -h | --help
+Display Usage synopsis and options description
+
+.TP
+.B -s | --shutdown
+Remove OS Host and Interface configuration
 
 .SH "FILES"
 .TP
