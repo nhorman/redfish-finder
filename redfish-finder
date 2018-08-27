@@ -4,6 +4,7 @@ import sys
 import os
 import subprocess
 import ipaddress
+import argparse
 
 #
 # Helper function to consume the dmidecode output
@@ -268,7 +269,8 @@ class dmiobject():
 # Various OS config files (/etc/host) 
 #
 class OSServiceData():
-	def __init__(self):
+	def __init__(self, sconf):
+		self.sconf = sconf
 		try:
 			f = open("/etc/hosts", "r")
 			self.host_entries = f.readlines()
@@ -278,20 +280,20 @@ class OSServiceData():
 			print("Unable to read OS Config Files")
 			return None
 
-	def update_redfish_info(self, sconf):
+	def update_redfish_info(self):
 		# strip any redfish localhost entry from host_entries
 		# as well as any entries for the smbios exported host name
 		for h in self.host_entries:
 			if h.find(self.constant_name) != -1:
 				self.host_entries.remove(h)
 				continue
-			if h.find(sconf.hostname) != -1:
+			if h.find(self.sconf.hostname) != -1:
 				self.host_entries.remove(h)
 				continue
 
 		# Now add the new entries in
-		newentry = str(sconf.address) + "     " + self.constant_name
-		newentry = newentry + " " + sconf.hostname
+		newentry = str(self.sconf.address) + "     " + self.constant_name
+		newentry = newentry + " " + self.sconf.hostname
 		self.host_entries.append(newentry)
 
 	def output_redfish_config(self):
@@ -304,6 +306,16 @@ class OSServiceData():
 			return False
 		return True
 
+	def remove_redfish_config(self):
+		for h in self.host_entries:
+			if h.find(self.constant_name) != -1:
+				self.host_entries.remove(h)
+				continue
+			if h.find(self.sconf.hostname) != -1:
+                                self.host_entries.remove(h)
+                                continue
+		return self.output_redfish_config()
+
 #
 # Represents an nm connection, pulls in the config from nmi con show <ifc>
 # Creates the connection if it doesn't exist, and updates it to reflect the host 
@@ -312,6 +324,9 @@ class OSServiceData():
 class nmConnection():
 	def __init__(self, ifc):
 		self.ifc = ifc
+		self.cmdlinedown = "nmcli con down id " + self.ifc.getifcname()
+		self.cmdlineup = "nmcli con up id " + self.ifc.getifcname()
+
 		try:
 			propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
 		except:
@@ -354,19 +369,25 @@ class nmConnection():
 		return self.properties[prop]
 
 	def sync_to_os(self):
-		cmdlinedown = "nmcli con down id " + self.ifc.getifcname()
-		cmdlineup = "nmcli con up id " + self.ifc.getifcname()
 		cmdlinemod = "nmcli con modify id " + self.ifc.getifcname() + " "
 		if self.updates == None:
 			return True
 		for i in self.updates:
 			cmdlinemod = cmdlinemod + i + " " + self.properties[i] + " "
 		try:
-			subprocess.check_call(cmdlinedown.split())
+			subprocess.check_call(self.cmdlinedown.split())
 			subprocess.check_call(cmdlinemod.split())
-			subprocess.check_call(cmdlineup.split())
+			subprocess.check_call(self.cmdlineup.split())
 		except:
 			print("redfish-finder: Unexpected error running nmcli while updating connection")
+			return False
+		return True
+
+	def shutdown(self):
+		try:
+			subprocess.check_call(self.cmdlinedown.split())
+		except:
+			print("redfish-finder: Unexpected error running nmcli while closing connection")
 			return False
 		return True
 
@@ -378,6 +399,10 @@ def get_info_from_dmidecode():
 	return dmiobject(dmioutput)
 
 def main():
+	parser = argparse.ArgumentParser(description='Use SMBios info to setup canonical BMC access from the host')
+	parser.add_argument('-s', '--shutdown', action='store_true')
+	args = parser.parse_args(sys.argv[1:])
+
 	print("redfish-finder: Getting dmidecode info")
 	smbios_info = get_info_from_dmidecode()
 	if smbios_info == None:
@@ -386,18 +411,26 @@ def main():
 	conn = nmConnection(smbios_info.device)
 	if conn == None:
 		sys.exit(1)
+	print("redfish-finder: Obtaining OS config info")
+	svc = OSServiceData(smbios_info.serviceconfig)
+	if svc == None:
+		sys.exit(1)
+
+	if args.shutdown == True:
+		print("Shutting down interface %s" % smbios_info.device.getifcname())
+		conn.shutdown()
+		print("Scrubbing host info from OS config")
+		svc.remove_redfish_config()
+		sys.exit(0)
+
 	print("redfish-finder: Converting SMBIOS Host Config to NetworkManager Connection info")
 	if smbios_info.hostconfig.generate_nm_config(smbios_info.device, conn) == False:
 		sys.exit(1)
 	print("redfish-finder: Applying NetworkManager connection configuration changes")
 	if conn.sync_to_os() == False:
 		sys.exit(1)
-	print("redfish-finder: Obtaining OS config info")
-	svc = OSServiceData()
-	if svc == None:
-		sys.exit(1)
 	print("redfish-finder: Adding redfish host info to OS config")
-	svc.update_redfish_info(smbios_info.serviceconfig)
+	svc.update_redfish_info()
 	if svc.output_redfish_config() == False:
 		sys.exit(1)
 	print("redfish-finder: Done, BMC is now reachable via hostname redfish-localhost")
