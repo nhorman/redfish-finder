@@ -6,23 +6,23 @@ import subprocess
 import ipaddress
 import argparse
 
-#
+#######################################################
 # Helper function to consume the dmidecode output
 # Accepts a string as input and truncates the string
 # to the point immediately following needle
-#
+######################################################
 def cursor_consume_next(cursor, needle):
 	idx = cursor.find(needle)
 	if idx == -1:
 		return None
 	return cursor[idx + len(needle):]
 
-#
+######################################################
 # The AssignType class.  Ennumerates the various
 # Types of Host and Redfish  IP Address assignments
 # That are possible. Taken from the Redfish Host API 
 # Specification 
-#
+######################################################
 class AssignType():
 	UNKNOWN = 0
 	STATIC = 1
@@ -33,25 +33,29 @@ class AssignType():
 	typestring = ["Unknwon", "Static", "DHCP", "Autoconf", "Host Selected"]
 
 
-#
+######################################################
 # NetDevice class, Superclass of bus specific Device Classes
 # USBNetDevice, and PCINetDevice.  Provides the getifcname
 # interface for use in configuring the OS via nmcli
-#
+######################################################
 class NetDevice(object):
 	def __init(self):
 		self.name = "Unknown"
 
+	#
+	# Superclass function to get OS interface name
+	# agnostic to Physical interface type
+	#
 	def getifcname(self):
 		return self.name
 
 	def __str__(self):
 		return "Interface: " + self.name
 
-#
+######################################################
 # Subclass of NetDevice, parses the dmidecode output
 # to discover interface name for USB type devices
-#
+######################################################
 class USBNetDevice(NetDevice):
 	def __init__(self, dmioutput):
 		super(NetDevice, self).__init__()
@@ -63,10 +67,10 @@ class USBNetDevice(NetDevice):
 		self.vendor = (dmioutput.split()[2])[2:]
 
 		# Now we need to find the corresponding device name in sysfs
-		if self.find_device() == False:
+		if self._find_device() == False:
 			return None
 
-	def getname(self, dpath):
+	def _getname(self, dpath):
 		for root, dirs, files in os.walk(dpath, topdown=False):
 			for d in dirs:
 				try:
@@ -79,7 +83,7 @@ class USBNetDevice(NetDevice):
 					continue
 		return False
 
-	def find_device(self):
+	def _find_device(self):
 		for root,dirs,files in os.walk("/sys/bus/usb/devices", topdown=False):
 			for d in dirs:
 				try:
@@ -97,17 +101,17 @@ class USBNetDevice(NetDevice):
 					f.close()
 					# We found a matching product and vendor, go find the net directory
 					# and get the interface name
-					return self.getname(os.path.join(root, d))
+					return self._getname(os.path.join(root, d))
 				except:
 					continue
 		print("redfish-finder: Unable to find usb network device with vendor:product %x:%x" % self.vendor, self.product)
 		return False 
 
 
-#
+######################################################
 # Parses out HostConfig information from SMBIOS for use in
 # Configuring OS network interface 
-#
+######################################################
 class HostConfig():
 	def __init__(self, cursor):
 		self.address = None
@@ -148,6 +152,10 @@ class HostConfig():
 			print("redfish-finder: Unexpected error while parsing HostConfig!")
 			return None
 
+	#
+	# Using the smbios host config info, set the appropriate
+	# attributes of the network manager connection object
+	#
 	def generate_nm_config(self, device, nmcon):
 		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
 		if self.address.version == 4:
@@ -173,10 +181,10 @@ class HostConfig():
 		return val
 
 
-#
+######################################################
 # Class to hold Redfish service information, as extracted 
 # From the smbios data from dmidecode
-#
+######################################################
 class ServiceConfig():
 	def __init__(self, cursor):
 		self.address = None
@@ -221,6 +229,11 @@ class ServiceConfig():
 			val = val + " " + str(self.address) + "/" + str(self.mask)
 		return val
 
+######################################################
+# Object to hold the information parsed from smbios
+# Split into a Netdevice object, a HostConfig object
+# and a ServiceConfig object
+######################################################
 class dmiobject():
 	def __init__(self, dmioutput):
 		cursor = dmioutput
@@ -264,10 +277,10 @@ class dmiobject():
 	def __str__(self):
 		return str(self.device) + " | " + str(self.hostconfig) + " | " + str(self.serviceconfig)
 
-#
+######################################################
 # Service Data represents the config data that gets written to 
 # Various OS config files (/etc/host) 
-#
+######################################################
 class OSServiceData():
 	def __init__(self, sconf):
 		self.sconf = sconf
@@ -280,6 +293,10 @@ class OSServiceData():
 			print("Unable to read OS Config Files")
 			return None
 
+	#
+	# Method to read in /etc/hosts, remove old redfish entries
+	# and insert new ones based on ServiceConfig
+	#
 	def update_redfish_info(self):
 		# strip any redfish localhost entry from host_entries
 		# as well as any entries for the smbios exported host name
@@ -296,6 +313,9 @@ class OSServiceData():
 		newentry = newentry + " " + self.sconf.hostname
 		self.host_entries.append(newentry)
 
+	#
+	# write out /etc/hosts with updated redfish info
+	#
 	def output_redfish_config(self):
 		try:
 			f = open("/etc/hosts", "w")
@@ -306,6 +326,9 @@ class OSServiceData():
 			return False
 		return True
 
+	#
+	# Remove redfish information from /etc/hosts, and write it back to file
+	#
 	def remove_redfish_config(self):
 		for h in self.host_entries:
 			if h.find(self.constant_name) != -1:
@@ -316,11 +339,11 @@ class OSServiceData():
                                 continue
 		return self.output_redfish_config()
 
-#
+######################################################
 # Represents an nm connection, pulls in the config from nmi con show <ifc>
 # Creates the connection if it doesn't exist, and updates it to reflect the host 
 # Config data from the HostConfig class
-#
+######################################################
 class nmConnection():
 	def __init__(self, ifc):
 		self.ifc = ifc
@@ -357,15 +380,26 @@ class nmConnection():
 			print("Unexpected error parsing connection for %s" % self.ifc)
 			return None
 
+	#
+	# Update a property value in this network manager object
+	#
 	def update_property(self, prop, val):
 		if self.get_property(prop) == val:
 			return
 		self.properties[prop] = val
 		self.updates.append(prop)
 
+	#
+	# Read a network manager object property
+	#
 	def get_property(self, prop):
 		return self.properties[prop]
 
+	#
+	# Using this object, run nmcli to update the os so that the
+	# interface represented here is in sync with our desired
+	# configuration
+	#
 	def sync_to_os(self):
 		cmdlinemod = "nmcli con modify id " + self.ifc.getifcname() + " "
 		for i in self.updates:
@@ -389,6 +423,9 @@ class nmConnection():
 			return False
 		return True
 
+	#
+	# Down the represented interface
+	#
 	def shutdown(self):
 		try:
 			subprocess.check_call(self.cmdlinedown.split())
