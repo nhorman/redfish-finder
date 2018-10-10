@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 import sys
 import os
@@ -61,10 +61,8 @@ class USBNetDevice(NetDevice):
 		super(NetDevice, self).__init__()
 		dmioutput = cursor_consume_next(dmioutput, "idVendor: ")
 		# Strip the 0x off the front of the vendor and product ids
-		#NOTE: IM SWAPPING THESE BECAUSE THEY ARE BACKWARDS ON MY DEVEL SYSTEM
-		#THIS NEEDS TO BE REVERTED
-		self.product = (dmioutput.split()[0])[2:]
-		self.vendor = (dmioutput.split()[2])[2:]
+		self.vendor = int((dmioutput.split()[0])[2:], 16)
+		self.product = int((dmioutput.split()[2])[2:], 16)
 
 		# Now we need to find the corresponding device name in sysfs
 		if self._find_device() == False:
@@ -89,13 +87,13 @@ class USBNetDevice(NetDevice):
 				try:
 					f = open(os.path.join(root, d, "idVendor"))
 					lines = f.readlines()
-					if lines[0][0:4] != self.vendor:
+					if lines[0][0:4] != hex(self.vendor)[2:]:
 						f.close()
 						continue
 					f.close()
 					f = open(os.path.join(root, d, "idProduct"))
 					lines = f.readlines()
-					if lines[0][0:4] != self.product:
+					if lines[0][0:4] != hex(self.product)[2:]:
 						f.close()
 						continue
 					f.close()
@@ -104,7 +102,7 @@ class USBNetDevice(NetDevice):
 					return self._getname(os.path.join(root, d))
 				except:
 					continue
-		print("redfish-finder: Unable to find usb network device with vendor:product %x:%x" % self.vendor, self.product)
+		print("redfish-finder: Unable to find usb network device with vendor:product %s:%s" % (hex(self.vendor), hex(self.product)))
 		return False 
 
 
@@ -128,18 +126,18 @@ class HostConfig():
 				cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Address: ")
-					addr = unicode(cursor.split()[0], "utf-8")
+					addr = cursor.split()[0]
 					self.address = ipaddress.IPv4Address(addr)
 					cursor = cursor_consume_next(cursor, "IPv4 Mask: ")
-					mask = unicode (cursor.split()[0], "utf-8")
+					mask = cursor.split()[0]
 					self.mask = ipaddress.IPv4Address(mask)
 					self.network = ipaddress.IPv4Network(addr + "/" + mask, strict=False)
 				elif cursor.split()[0] == "IPv6":
 					cursor = cursor_consume_next(cursor, "IPv6 Address: ")
-					addr = unicode(cursor.split()[0], "utf-8")	
+					addr = cursor.split()[0]	
 					self.address = ipaddress.IPv6Address(addr)
 					cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
-					mask = unicode(cursor.split()[0], "utf-8")
+					mask = cursor.split()[0]
 					self.mask = ipaddress.IPv4Address(mask)
 					self.network = ipaddress.IPv6Network(addr + "/" + mask, strict=False)
 			elif cursor.split()[0] == "DHCP":
@@ -158,6 +156,7 @@ class HostConfig():
 	#
 	def generate_nm_config(self, device, nmcon):
 		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
+		print(self.address)
 		if self.address.version == 4:
 			methodp = "ipv4.method"
 			addrp = "ipv4.addresses"	
@@ -199,9 +198,9 @@ class ServiceConfig():
 				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Address: ")
-					self.address = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+					self.address = ipaddress.IPv4Address(cursor.split()[0])
 					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Mask: ")
-					self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+					self.mask = ipaddress.IPv4Address(cursor.split()[0])
 				elif cursor.split()[0] == "IPv6":
 					cursor = cursor_consume_next(cursor, "IPv6 Redfish Service Address: ")
 					self.address = ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8"))
@@ -213,7 +212,6 @@ class ServiceConfig():
 				# Support the other types later
 				print("redfish-finder: Unable to parse SMBIOS Service Config info")
 				return None
-
 			cursor = cursor_consume_next(cursor, "Redfish Service Port: ")
 			self.port = int(cursor.split()[0])
 			cursor = cursor_consume_next(cursor, "Redfish Service Vlan: ")
@@ -369,10 +367,9 @@ class nmConnection():
 		try:
 			self.properties = {}
 			self.updates = [] 
-
-			lines = propstr.split('\n')
+			lines = propstr.splitlines()
 			for l in lines:
-				la = l.split()
+				la = l.decode("utf-8").split()
 				if len(la) < 2:
 					continue
 				self.properties[la[0].strip(":")] = la[1]
@@ -439,7 +436,7 @@ class nmConnection():
 
 def get_info_from_dmidecode():
 	dmioutput = subprocess.check_output(["/usr/sbin/dmidecode", "-t42"])
-	return dmiobject(dmioutput)
+	return dmiobject(dmioutput.decode())
 
 def main():
 	parser = argparse.ArgumentParser(description='Use SMBios info to setup canonical BMC access from the host')
