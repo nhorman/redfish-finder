@@ -156,16 +156,18 @@ class HostConfig():
 	#
 	def generate_nm_config(self, device, nmcon):
 		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
-		print(self.address)
-		if self.address.version == 4:
-			methodp = "ipv4.method"
-			addrp = "ipv4.addresses"	
-		else:
-			methodp = "ipv6.method"
-			addrp = "ipv6.addresses"
+		methodp = "ipv4.method"
+		if self.assigntype == AssignType.STATIC:
+			if self.address.version == 4:
+				methodp = "ipv4.method"
+				addrp = "ipv4.addresses"	
+			else:
+				methodp = "ipv6.method"
+				addrp = "ipv6.addresses"
 		try:
 			nmcon.update_property(methodp, assignmap[self.assigntype])
-			nmcon.update_property(addrp, str(self.address) + "/" + str(self.network.prefixlen))
+			if self.assigntype == AssignType.STATIC:
+				nmcon.update_property(addrp, str(self.address) + "/" + str(self.network.prefixlen))
 		except:
 			print("redfish-finder: Error generating nm_config")
 			return False
