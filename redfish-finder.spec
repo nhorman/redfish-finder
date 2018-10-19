@@ -2,7 +2,7 @@
 
 Name: redfish-finder 
 Version: 0
-Release: 0.1.%{gitdate}git%{shortcommit}
+Release: 0.2.%{gitdate}git%{shortcommit}
 Summary: utility for parsing smbios information and configuring canonical bmc access
 BuildArch: noarch
 
@@ -47,6 +47,9 @@ install -D -p -m 0644 ./redfish-finder.service %{buildroot}/%{_unitdir}/redfish-
 %{_unitdir}/redfish-finder.service
 
 %changelog
+* Fri Oct 19 2018 Neil Horman <nhorman@tuxdriver.com> - 0-0.2.20181019git
+- Tagging version 0.2
+
 * Tue Aug 28 2018 Neil Horman <nhorman@tuxdriver.com> - 0-0.1.20180828git
 - Initial import
 
