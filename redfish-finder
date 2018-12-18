@@ -87,13 +87,13 @@ class USBNetDevice(NetDevice):
 				try:
 					f = open(os.path.join(root, d, "idVendor"))
 					lines = f.readlines()
-					if lines[0][0:4] != hex(self.vendor)[2:]:
+					if int(lines[0][0:4],16) != self.vendor:
 						f.close()
 						continue
 					f.close()
 					f = open(os.path.join(root, d, "idProduct"))
 					lines = f.readlines()
-					if lines[0][0:4] != hex(self.product)[2:]:
+					if int(lines[0][0:4],16) != self.product:
 						f.close()
 						continue
 					f.close()
