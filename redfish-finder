@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/libexec/platform-python
 
 import sys
 import os
@@ -48,6 +48,9 @@ class NetDevice(object):
 	#
 	def getifcname(self):
 		return self.name
+
+	def merge(self, newdev):
+		return self
 
 	def __str__(self):
 		return "Interface: " + self.name
@@ -112,9 +115,9 @@ class USBNetDevice(NetDevice):
 ######################################################
 class HostConfig():
 	def __init__(self, cursor):
-		self.address = None
-		self.mask = None
-		self.network = None
+		self.address = [] 
+		self.mask = [] 
+		self.network = [] 
 
 		try:
 			cursor = cursor_consume_next(cursor, "Host IP Assignment Type: ")
@@ -122,26 +125,30 @@ class HostConfig():
 				printf("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
 				return None
 			if cursor.split()[0] == "Static":
-				self.assigntype = AssignType.STATIC
+				self.assigntype = []
+				self.assigntype.append(AssignType.STATIC)
 				cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Address: ")
 					addr = cursor.split()[0]
-					self.address = ipaddress.IPv4Address(addr)
+					self.address.append(ipaddress.IPv4Address(addr))
 					cursor = cursor_consume_next(cursor, "IPv4 Mask: ")
 					mask = cursor.split()[0]
-					self.mask = ipaddress.IPv4Address(mask)
-					self.network = ipaddress.IPv4Network(addr + "/" + mask, strict=False)
+					self.mask.append(ipaddress.IPv4Address(mask))
+					self.network.append(ipaddress.IPv4Network(addr + "/" + mask, strict=False))
 				elif cursor.split()[0] == "IPv6":
 					cursor = cursor_consume_next(cursor, "IPv6 Address: ")
 					addr = cursor.split()[0]	
-					self.address = ipaddress.IPv6Address(addr)
+					self.address.append(ipaddress.IPv6Address(addr))
 					cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
 					mask = cursor.split()[0]
-					self.mask = ipaddress.IPv4Address(mask)
-					self.network = ipaddress.IPv6Network(addr + "/" + mask, strict=False)
+					self.mask.append(ipaddress.IPv4Address(mask))
+					self.network.append(ipaddress.IPv6Network(addr + "/" + mask, strict=False))
 			elif cursor.split()[0] == "DHCP":
-				self.assigntype = AssignType.DHCP
+				self.assigntype.append(AssignType.DHCP)
+				self.address.append(0)
+				self.mask.append(0)
+				self.network.append(0)
 			else:
 				# Support the other types later
 				print("redfish-finder: Unable to parse SMBIOS Host configuaration")
@@ -150,6 +157,13 @@ class HostConfig():
 			print("redfish-finder: Unexpected error while parsing HostConfig!")
 			return None
 
+	def merge(self, newconfig):
+		self.assigntype.extend(newconfig.assigntype)
+		self.address.extend(newconfig.address)
+		self.mask.extend(newconfig.mask)
+		self.network.extend(newconfig.network)
+		return self
+
 	#
 	# Using the smbios host config info, set the appropriate
 	# attributes of the network manager connection object
@@ -157,20 +171,22 @@ class HostConfig():
 	def generate_nm_config(self, device, nmcon):
 		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
 		methodp = "ipv4.method"
-		if self.assigntype == AssignType.STATIC:
-			if self.address.version == 4:
-				methodp = "ipv4.method"
-				addrp = "ipv4.addresses"	
-			else:
-				methodp = "ipv6.method"
-				addrp = "ipv6.addresses"
-		try:
-			nmcon.update_property(methodp, assignmap[self.assigntype])
-			if self.assigntype == AssignType.STATIC:
-				nmcon.update_property(addrp, str(self.address) + "/" + str(self.network.prefixlen))
-		except:
-			print("redfish-finder: Error generating nm_config")
-			return False
+		for i in range(len(self.assigntype)):
+			assigntype = self.assigntype[i]
+			if assigntype == AssignType.STATIC:
+				if self.address[i].version == 4:
+					methodp = "ipv4.method"
+					addrp = "ipv4.addresses"	
+				else:
+					methodp = "ipv6.method"
+					addrp = "ipv6.addresses"
+			try:
+				nmcon.update_property(methodp, assignmap[assigntype])
+				if assigntype == AssignType.STATIC:
+					nmcon.update_property(addrp, str(self.address[i]) + "/" + str(self.network[i].prefixlen))
+			except:
+				print("redfish-finder: Error generating nm_config")
+				return False
 
 		return True
 
@@ -188,8 +204,8 @@ class HostConfig():
 ######################################################
 class ServiceConfig():
 	def __init__(self, cursor):
-		self.address = None
-		self.mask = None
+		self.address = []
+		self.mask = []
 		try:
 			cursor = cursor_consume_next(cursor, "Redfish Service IP Discovery Type: ")
 			if cursor == None:
@@ -200,14 +216,14 @@ class ServiceConfig():
 				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Address: ")
-					self.address = ipaddress.IPv4Address(cursor.split()[0])
+					self.address.append(ipaddress.IPv4Address(cursor.split()[0]))
 					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Mask: ")
-					self.mask = ipaddress.IPv4Address(cursor.split()[0])
+					self.mask.append(ipaddress.IPv4Address(cursor.split()[0]))
 				elif cursor.split()[0] == "IPv6":
 					cursor = cursor_consume_next(cursor, "IPv6 Redfish Service Address: ")
-					self.address = ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8"))
+					self.address.append(ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8")))
 					cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
-					self.mask = ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8"))
+					self.mask.append(ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8")))
 			elif cursor.split()[0] == "DHCP":
 				self.assigntype = AssignType.DHCP
 			else:
@@ -223,6 +239,11 @@ class ServiceConfig():
 		except:
 			print("redfish-finder: Unexpected error parsing ServiceConfig")
 
+	def merge(self, newconfig):
+		self.address.extend(newconfig.address)
+		self.mask.extend(newconfig.mask)
+		return self
+
 	def __str__(self):
 		val = "Service Config(" + AssignType.typestring[self.assigntype] + ")" 
 		if (self.assigntype == AssignType.STATIC):
@@ -236,42 +257,63 @@ class ServiceConfig():
 ######################################################
 class dmiobject():
 	def __init__(self, dmioutput):
+		self.device = None
+		self.hostconfig = None
+		self.serviceconfig = None
 		cursor = dmioutput
 		# Find the type 42 header, if not found, nothing to do here
-		cursor = cursor_consume_next(cursor, "Management Controller Host Interface\n") 
-		if (cursor == None):
-			return None
-		cursor = cursor_consume_next(cursor, "Host Interface Type: Network\n")
-		if (cursor == None):
-			return None
+		cursor = cursor_consume_next(cursor, "Management Controller Host Interface\n")
+		while (cursor != None):
+			if (cursor == None):
+				return None
+			cursor = cursor_consume_next(cursor, "Host Interface Type: Network\n")
+			if (cursor == None):
+				return None
 
-		# If we get here then we know this is a network interface device
-		cursor = cursor_consume_next(cursor, "Device Type: ")
-		# The next token should either be:
-		# USB
-		# PCI/PCIe
-		# OEM
-		# Unknown
-		dtype = cursor.split()[0]
-		if (dtype == "USB"):
-			self.device = USBNetDevice(cursor)
+			# If we get here then we know this is a network interface device
+			cursor = cursor_consume_next(cursor, "Device Type: ")
+			# The next token should either be:
+			# USB
+			# PCI/PCIe
+			# OEM
+			# Unknown
+			dtype = cursor.split()[0]
+			if (dtype == "USB"):
+				newdev = USBNetDevice(cursor)
 
-		if self.device == None:
-			return None
+			if newdev == None:
+				return None
 
-		# Now find the Redfish over IP section
-		cursor = cursor_consume_next(cursor, "Protocol ID: 04 (Redfish over IP)\n")
-		if (cursor == None):
-			print("redfish-finder: Unable to find Redfish Protocol")
-			return None
+			if self.device == None:
+				self.device = newdev
+			else:
+				self.device.merge(newdev)
 
-		self.hostconfig = HostConfig(cursor)
-		if self.hostconfig == None:
-			return None
+			# Now find the Redfish over IP section
+			cursor = cursor_consume_next(cursor, "Protocol ID: 04 (Redfish over IP)\n")
+			if (cursor == None):
+				print("redfish-finder: Unable to find Redfish Protocol")
+				return None
 
-		self.serviceconfig = ServiceConfig(cursor)
-		if self.serviceconfig == None:
-			return None
+			newhostconfig = HostConfig(cursor)
+			if newhostconfig == None:
+				return None
+
+			if self.hostconfig == None:
+				self.hostconfig = newhostconfig
+			else:
+				self.hostconfig.merge(newhostconfig)
+
+			serviceconfig = ServiceConfig(cursor)
+			if serviceconfig == None:
+				return None
+
+			if self.serviceconfig == None:
+				self.serviceconfig = serviceconfig
+			elif self.serviceconfig == None:
+				self.serviceconfig.merge(serviceconfig)
+
+			cursor = cursor_consume_next(cursor, "Management Controller Host Interface\n")
 
 
 	def __str__(self):
@@ -309,7 +351,10 @@ class OSServiceData():
 				continue
 
 		# Now add the new entries in
-		newentry = str(self.sconf.address) + "     " + self.constant_name
+		addresses=""
+		for i in self.sconf.address:
+			addresses = addresses + str(i) + " "
+		newentry = addresses + "     " + self.constant_name
 		newentry = newentry + " " + self.sconf.hostname
 		self.host_entries.append(newentry)
 
