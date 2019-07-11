@@ -235,7 +235,16 @@ class ServiceConfig():
 			cursor = cursor_consume_next(cursor, "Redfish Service Vlan: ")
 			self.vlan = int(cursor.split()[0])
 			cursor = cursor_consume_next(cursor, "Redfish Service Hostname: ")
-			self.hostname = cursor.split()[0]
+
+			#
+			# Sanity check: If it contains the consecutive spaces
+			# only, reference to the index '0' will throw an
+			# exception.
+			#
+			if len(cursor.split()) != 0:
+				self.hostname = cursor.split()[0]
+			else:
+				self.hostname = ""
 		except:
 			print("redfish-finder: Unexpected error parsing ServiceConfig")
 
