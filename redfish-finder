@@ -69,7 +69,7 @@ class USBNetDevice(NetDevice):
 
 		# Now we need to find the corresponding device name in sysfs
 		if self._find_device() == False:
-			return None
+			raise RuntimeError("Unable to find USB network device")
 
 	def _getname(self, dpath):
 		for root, dirs, files in os.walk(dpath, topdown=False):
@@ -122,8 +122,7 @@ class HostConfig():
 		try:
 			cursor = cursor_consume_next(cursor, "Host IP Assignment Type: ")
 			if cursor == None:
-				printf("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
-				return None
+				raise RuntimeError("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
 			if cursor.split()[0] == "Static":
 				self.assigntype = []
 				self.assigntype.append(AssignType.STATIC)
@@ -151,11 +150,9 @@ class HostConfig():
 				self.network.append(0)
 			else:
 				# Support the other types later
-				print("redfish-finder: Unable to parse SMBIOS Host configuaration")
-				return None
+				raise RuntimeError("redfish-finder: Unable to parse SMBIOS Host configuaration")
 		except:
-			print("redfish-finder: Unexpected error while parsing HostConfig!")
-			return None
+			raise RuntimeError("redfish-finder: Unexpected error while parsing HostConfig!")
 
 	def merge(self, newconfig):
 		self.assigntype.extend(newconfig.assigntype)
@@ -209,8 +206,7 @@ class ServiceConfig():
 		try:
 			cursor = cursor_consume_next(cursor, "Redfish Service IP Discovery Type: ")
 			if cursor == None:
-				print("redfish-finder: Unable to find Redfish Service Info")
-				return None
+				raise RuntimeError("redfish-finder: Unable to find Redfish Service Info")
 			if cursor.split()[0] == "Static":
 				self.assigntype = AssignType.STATIC
 				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
@@ -246,7 +242,7 @@ class ServiceConfig():
 			else:
 				self.hostname = ""
 		except:
-			print("redfish-finder: Unexpected error parsing ServiceConfig")
+			raise RuntimeError("redfish-finder: Unexpected error parsing ServiceConfig")
 
 	def merge(self, newconfig):
 		self.address.extend(newconfig.address)
@@ -272,12 +268,14 @@ class dmiobject():
 		cursor = dmioutput
 		# Find the type 42 header, if not found, nothing to do here
 		cursor = cursor_consume_next(cursor, "Management Controller Host Interface\n")
+		if cursor == None:
+			raise RuntimeError("Unable to find Management Controller Host Interface block in SMBIOS")
 		while (cursor != None):
 			if (cursor == None):
-				return None
+				raise RuntimeError("No Redfish Host support detected")
 			cursor = cursor_consume_next(cursor, "Host Interface Type: Network\n")
 			if (cursor == None):
-				return None
+				raise RuntimeError("No supported Redfish host interface type found")
 
 			# If we get here then we know this is a network interface device
 			cursor = cursor_consume_next(cursor, "Device Type: ")
@@ -290,9 +288,6 @@ class dmiobject():
 			if (dtype == "USB"):
 				newdev = USBNetDevice(cursor)
 
-			if newdev == None:
-				return None
-
 			if self.device == None:
 				self.device = newdev
 			else:
@@ -301,12 +296,9 @@ class dmiobject():
 			# Now find the Redfish over IP section
 			cursor = cursor_consume_next(cursor, "Protocol ID: 04 (Redfish over IP)\n")
 			if (cursor == None):
-				print("redfish-finder: Unable to find Redfish Protocol")
-				return None
+				raise RuntimeError("No Redfish over IP Protocol support")
 
 			newhostconfig = HostConfig(cursor)
-			if newhostconfig == None:
-				return None
 
 			if self.hostconfig == None:
 				self.hostconfig = newhostconfig
@@ -314,8 +306,6 @@ class dmiobject():
 				self.hostconfig.merge(newhostconfig)
 
 			serviceconfig = ServiceConfig(cursor)
-			if serviceconfig == None:
-				return None
 
 			if self.serviceconfig == None:
 				self.serviceconfig = serviceconfig
@@ -417,8 +407,7 @@ class nmConnection():
 				subprocess.check_call(create)
 				propstr = subprocess.check_output(["nmcli", "con", "show", ifc.getifcname()])
 			except:
-				print("redfish-finder: Unexpected error building connection to %s" % self.ifc)
-				return None
+				raise RuntimeError("redfish-finder: Unexpected error building connection to %s" % self.ifc)
 
 		try:
 			self.properties = {}
@@ -430,8 +419,7 @@ class nmConnection():
 					continue
 				self.properties[la[0].strip(":")] = la[1]
 		except:
-			print("Unexpected error parsing connection for %s" % self.ifc)
-			return None
+			raise RuntimeError("Unexpected error parsing connection for %s" % self.ifc)
 
 	#
 	# Update a property value in this network manager object
@@ -491,7 +479,10 @@ class nmConnection():
 		return str(self.properties)
 
 def get_info_from_dmidecode():
-	dmioutput = subprocess.check_output(["/usr/sbin/dmidecode", "-t42"])
+	try:
+		dmioutput = subprocess.check_output(["/usr/sbin/dmidecode", "-t42"])
+	except:
+		raise RuntimeError("Failed to run dmidecode.  Make sure you run as root")
 	return dmiobject(dmioutput.decode())
 
 def main():
@@ -500,13 +491,19 @@ def main():
 	args = parser.parse_args(sys.argv[1:])
 
 	print("redfish-finder: Getting dmidecode info")
-	smbios_info = get_info_from_dmidecode()
-	if smbios_info == None:
+	try:
+		smbios_info = get_info_from_dmidecode()
+	except RuntimeError as e:
+		print("Error parsing dmidecode information: %s\n" % e)
 		sys.exit(1)
+
 	print("redfish-finder: Building NetworkManager connection info")
-	conn = nmConnection(smbios_info.device)
-	if conn == None:
+	try:
+		conn = nmConnection(smbios_info.device)
+	except RuntimeError as e:
+		print("redfish-finder: Error building nm connection: %s\n" % e)
 		sys.exit(1)
+
 	print("redfish-finder: Obtaining OS config info")
 	svc = OSServiceData(smbios_info.serviceconfig)
 	if svc == None:
