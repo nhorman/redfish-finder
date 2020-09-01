@@ -123,8 +123,8 @@ class HostConfig():
 			cursor = cursor_consume_next(cursor, "Host IP Assignment Type: ")
 			if cursor == None:
 				raise RuntimeError("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
+			self.assigntype = []
 			if cursor.split()[0] == "Static":
-				self.assigntype = []
 				self.assigntype.append(AssignType.STATIC)
 				cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
