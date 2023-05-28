@@ -124,8 +124,12 @@ class HostConfig():
 			if cursor == None:
 				raise RuntimeError("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
 			self.assigntype = []
-			if cursor.split()[0] == "Static":
-				self.assigntype.append(AssignType.STATIC)
+			if cursor.split()[0] == "Static" or cursor.split()[0] == "AutoConf":
+				assigntype = AssignType.STATIC
+				if cursor.split()[0] == "AutoConf":
+					assigntype = AssignType.AUTOCONF
+				self.assigntype.append(assigntype)
+
 				cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Address: ")
@@ -166,11 +170,11 @@ class HostConfig():
 	# attributes of the network manager connection object
 	#
 	def generate_nm_config(self, device, nmcon):
-		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
+		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto", AssignType.AUTOCONF: "auto"}
 		methodp = "ipv4.method"
 		for i in range(len(self.assigntype)):
 			assigntype = self.assigntype[i]
-			if assigntype == AssignType.STATIC:
+			if assigntype == AssignType.STATIC or assigntype == AssignType.AUTOCONF:
 				if self.address[i].version == 4:
 					methodp = "ipv4.method"
 					addrp = "ipv4.addresses"	
@@ -179,7 +183,7 @@ class HostConfig():
 					addrp = "ipv6.addresses"
 			try:
 				nmcon.update_property(methodp, assignmap[assigntype])
-				if assigntype == AssignType.STATIC:
+				if assigntype == AssignType.STATIC or assigntype == AssignType.AUTOCONF:
 					nmcon.update_property(addrp, str(self.address[i]) + "/" + str(self.network[i].prefixlen))
 			except:
 				print("redfish-finder: Error generating nm_config")
@@ -208,8 +212,11 @@ class ServiceConfig():
 			cursor = cursor_consume_next(cursor, "Redfish Service IP Discovery Type: ")
 			if cursor == None:
 				raise RuntimeError("redfish-finder: Unable to find Redfish Service Info")
-			if cursor.split()[0] == "Static":
+			if cursor.split()[0] == "Static" or cursor.split()[0] == "AutoConf":
 				self.assigntype = AssignType.STATIC
+				if cursor.split()[0] == "AutoConf":
+					self.assigntype = AssignType.AUTOCONF
+
 				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Address: ")
