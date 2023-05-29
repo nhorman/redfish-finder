@@ -124,8 +124,12 @@ class HostConfig():
 			if cursor == None:
 				raise RuntimeError("redfish-finder: Unable to parse SMBIOS Host IP Assignment Type")
 			self.assigntype = []
-			if cursor.split()[0] == "Static":
-				self.assigntype.append(AssignType.STATIC)
+			if cursor.split()[0] == "Static" or cursor.split()[0] == "AutoConf":
+				assigntype = AssignType.STATIC
+				if cursor.split()[0] == "AutoConf":
+					assigntype = AssignType.AUTOCONF
+				self.assigntype.append(assigntype)
+
 				cursor = cursor_consume_next(cursor, "Host IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Address: ")
@@ -166,11 +170,11 @@ class HostConfig():
 	# attributes of the network manager connection object
 	#
 	def generate_nm_config(self, device, nmcon):
-		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto"}
+		assignmap = { AssignType.STATIC: "manual", AssignType.DHCP: "auto", AssignType.AUTOCONF: "auto"}
 		methodp = "ipv4.method"
 		for i in range(len(self.assigntype)):
 			assigntype = self.assigntype[i]
-			if assigntype == AssignType.STATIC:
+			if assigntype == AssignType.STATIC or assigntype == AssignType.AUTOCONF:
 				if self.address[i].version == 4:
 					methodp = "ipv4.method"
 					addrp = "ipv4.addresses"	
@@ -179,7 +183,7 @@ class HostConfig():
 					addrp = "ipv6.addresses"
 			try:
 				nmcon.update_property(methodp, assignmap[assigntype])
-				if assigntype == AssignType.STATIC:
+				if assigntype == AssignType.STATIC or assigntype == AssignType.AUTOCONF:
 					nmcon.update_property(addrp, str(self.address[i]) + "/" + str(self.network[i].prefixlen))
 			except:
 				print("redfish-finder: Error generating nm_config")
@@ -203,12 +207,16 @@ class ServiceConfig():
 	def __init__(self, cursor):
 		self.address = []
 		self.mask = []
+		self.dhcp_format = []
 		try:
 			cursor = cursor_consume_next(cursor, "Redfish Service IP Discovery Type: ")
 			if cursor == None:
 				raise RuntimeError("redfish-finder: Unable to find Redfish Service Info")
-			if cursor.split()[0] == "Static":
+			if cursor.split()[0] == "Static" or cursor.split()[0] == "AutoConf":
 				self.assigntype = AssignType.STATIC
+				if cursor.split()[0] == "AutoConf":
+					self.assigntype = AssignType.AUTOCONF
+
 				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
 				if cursor.split()[0] == "IPv4":
 					cursor = cursor_consume_next(cursor, "IPv4 Redfish Service Address: ")
@@ -220,16 +228,21 @@ class ServiceConfig():
 					self.address.append(ipaddress.IPv6Address(unicode(cursor.split()[0], "utf-8")))
 					cursor = cursor_consume_next(cursor, "IPv6 Mask: ")
 					self.mask.append(ipaddress.IPv4Address(unicode(cursor.split()[0], "utf-8")))
+				cursor = cursor_consume_next(cursor, "Redfish Service Port: ")
+				self.port = int(cursor.split()[0])
+				cursor = cursor_consume_next(cursor, "Redfish Service Vlan: ")
+				self.vlan = int(cursor.split()[0])
 			elif cursor.split()[0] == "DHCP":
 				self.assigntype = AssignType.DHCP
+				cursor = cursor_consume_next(cursor, "Redfish Service IP Address Format: ")
+				if cursor.split()[0] == "IPv4":
+					self.dhcp_format.append("DHCP4")
+				elif cursor.split()[0] == "IPv6":
+					self.dhcp_format.append("DHCP6")
 			else:
 				# Support the other types later
 				print("redfish-finder: Unable to parse SMBIOS Service Config info")
 				return None
-			cursor = cursor_consume_next(cursor, "Redfish Service Port: ")
-			self.port = int(cursor.split()[0])
-			cursor = cursor_consume_next(cursor, "Redfish Service Vlan: ")
-			self.vlan = int(cursor.split()[0])
 			cursor = cursor_consume_next(cursor, "Redfish Service Hostname: ")
 
 			#
@@ -338,7 +351,7 @@ class OSServiceData():
 	# Method to read in /etc/hosts, remove old redfish entries
 	# and insert new ones based on ServiceConfig
 	#
-	def update_redfish_info(self):
+	def update_redfish_info(self, conn):
 		# strip any redfish localhost entry from host_entries
 		# as well as any entries for the smbios exported host name
 		for h in self.host_entries:
@@ -351,8 +364,14 @@ class OSServiceData():
 
 		# Now add the new entries in
 		addresses=""
-		for i in self.sconf.address:
-			addresses = addresses + str(i) + " "
+		if self.sconf.assigntype == AssignType.DHCP:
+			for i in self.sconf.dhcp_format:
+				dhcp_ip = conn.get_dhcp_server_identifier(i)
+				addresses = addresses + str(dhcp_ip) + " "
+		else:
+			for i in self.sconf.address:
+				addresses = addresses + str(i) + " "
+
 		newentry = addresses + "     " + self.constant_name
 		newentry = newentry + " " + self.sconf.hostname
 		self.host_entries.append(newentry)
@@ -435,6 +454,21 @@ class nmConnection():
 	#
 	def get_property(self, prop):
 		return self.properties[prop]
+
+	#
+	# Get DHCP server identifier
+	#
+	def get_dhcp_server_identifier(self, dhcp_format):
+		propstr = subprocess.check_output(["nmcli", "-f", dhcp_format, "con", "show", self.ifc.getifcname()])
+		lines = propstr.splitlines()
+		for data in lines:
+			elements = data.decode("utf-8").split()
+			if len(elements) < 2:
+				continue
+			for key in elements:
+				if key == "dhcp_server_identifier":
+					return elements[3]
+		return None
 
 	#
 	# Using this object, run nmcli to update the os so that the
@@ -523,7 +557,7 @@ def main():
 	if conn.sync_to_os() == False:
 		sys.exit(1)
 	print("redfish-finder: Adding redfish host info to OS config")
-	svc.update_redfish_info()
+	svc.update_redfish_info(conn)
 	if svc.output_redfish_config() == False:
 		sys.exit(1)
 	print("redfish-finder: Done, BMC is now reachable via hostname redfish-localhost")
