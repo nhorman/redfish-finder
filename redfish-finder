@@ -108,6 +108,73 @@ class USBNetDevice(NetDevice):
 		print("redfish-finder: Unable to find usb network device with vendor:product %s:%s" % (hex(self.vendor), hex(self.product)))
 		return False 
 
+######################################################
+# Subclass of NetDevice, parses the dmidecode output
+# to discover interface name for PCI/PCIe type devices
+######################################################
+class PCINetDevice(NetDevice):
+	def __init__(self, dmioutput):
+		super(NetDevice, self).__init__()
+		dmioutput = cursor_consume_next(dmioutput, "VendorID: ")
+		# Strip the 0x off the front of the vendor, device, subsys_vendor and subsys_device ids
+		self.vendor = int((dmioutput.split()[0])[2:], 16)
+		self.device = int((dmioutput.split()[2])[2:], 16)
+		self.subsys_vendor = int((dmioutput.split()[4])[2:], 16)
+		self.subsys_device = int((dmioutput.split()[6])[2:], 16)
+
+		# Now we need to find the corresponding device name in sysfs
+		if self._find_device() == False:
+			raise RuntimeError("Unable to find PCI/PCIe network device")
+
+	def _getname(self, dpath):
+		for root, dirs, files in os.walk(dpath, topdown=False):
+			for d in dirs:
+				try:
+					if d != "net":
+						continue
+					dr = os.listdir(os.path.join(root, d))
+					self.name = dr[0]
+					return True
+				except:
+					continue
+		return False
+
+	def _find_device(self):
+		for root,dirs,files in os.walk("/sys/bus/pci/devices", topdown=False):
+			for d in dirs:
+				try:
+					f = open(os.path.join(root, d, "vendor"))
+					lines = f.readlines()
+					if int(lines[0][0:6],16) != self.vendor:
+						f.close()
+						continue
+					f.close()
+					f = open(os.path.join(root, d, "device"))
+					lines = f.readlines()
+					if int(lines[0][0:6],16) != self.device:
+						f.close()
+						continue
+					f.close()
+					f = open(os.path.join(root, d, "subsystem_vendor"))
+					lines = f.readlines()
+					if int(lines[0][0:6],16) != self.subsys_vendor:
+						f.close()
+						continue
+					f.close()
+					f = open(os.path.join(root, d, "subsystem_device"))
+					lines = f.readlines()
+					if int(lines[0][0:6],16) != self.subsys_device:
+						f.close()
+						continue
+					f.close()
+					# We found a matching vendor, device, subsystem_vendor and
+					# subsystem_device, go find the net directory and get the interface name
+					return self._getname(os.path.join(root, d))
+				except:
+				    continue
+		print("redfish-finder: Unable to find pci/pcie network device with vendor:device %s:%s and subsystem_vendor:subsystem_device %s:%s"
+			% (hex(self.vendor), hex(self.device), hex(self.subsys_vendor), hex(self.subsys_device)))
+		return False
 
 ######################################################
 # Parses out HostConfig information from SMBIOS for use in
@@ -300,6 +367,8 @@ class dmiobject():
 			dtype = cursor.split()[0]
 			if (dtype == "USB"):
 				newdev = USBNetDevice(cursor)
+			elif (dtype == "PCI/PCIe"):
+				newdev = PCINetDevice(cursor)
 
 			if self.device == None:
 				self.device = newdev
