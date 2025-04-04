@@ -69,7 +69,7 @@ class USBNetDevice(NetDevice):
 
 		# Now we need to find the corresponding device name in sysfs
 		if self._find_device() == False:
-			raise RuntimeError("Unable to find USB network device")
+			raise RuntimeError("Unable to find USB network device. The dmidecode tells us that this device exists. Please check if the device is enabled in the firmware.")
 
 	def _getname(self, dpath):
 		for root, dirs, files in os.walk(dpath, topdown=False):
