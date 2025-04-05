@@ -13,7 +13,7 @@ and management using the same REST api via a host accessible interface
 ## What is the redfish host interface specification?
 To enable localized OS access to the local system BMC, the BMC exports a system
 management controller infomation block via SMBIOS:
-https://www.dmtf.org/sites/default/files/DSP0270_1.0.1.pdf
+https://www.dmtf.org/sites/default/files/standards/documents/DSP0270_1.0.1.pdf
 
 This block publishes information to the host OS, which it can use to locally
 access the BMC.  This information includes, among other items:
